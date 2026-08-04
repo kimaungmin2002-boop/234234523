@@ -1,4 +1,4 @@
-# main.py (뷰 타임아웃 및 버튼 막힘 현상 최종 해결 버전)
+# main.py (챕터 30(300스테이지) 확장 및 몬스터/응답 오류 완벽 해결 버전)
 import json
 import os
 import random
@@ -43,7 +43,8 @@ SKILL_DICT = {s["name"]: s for s in ALL_SKILLS}
 
 MONSTERS = {}
 
-for st in range(1, 201):
+# 최대 300 스테이지(30챕터)까지 확장
+for st in range(1, 301):
   chapter = (st - 1) // 10 + 1
   sub = (st - 1) % 10 + 1
 
@@ -137,6 +138,18 @@ for st in range(1, 201):
           "boss_quote": "노는 게 제일 좋아!",
           "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
       }
+    elif chapter == 30:
+      MONSTERS[st] = {
+          "name": "최종 영역의 수호자 '제니스'",
+          "hp": 10000,
+          "max_hp": 10000,
+          "atk": 400,
+          "exp": 5000,
+          "gold": 5000,
+          "is_boss": True,
+          "boss_quote": "모험의 끝에 도달한 것을 치하한다. 하지만 여기서 멈출 것이다!",
+          "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
+      }
     else:
       MONSTERS[st] = {
           "name": f"챕터 {chapter} 수호자",
@@ -150,6 +163,7 @@ for st in range(1, 201):
           "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
       }
   else:
+    # 챕터별 일반 몬스터 이름 분기 철저 분리
     if chapter == 3:
       m_names = [
           "실 끊어진 태엽 인형",
@@ -158,6 +172,8 @@ for st in range(1, 201):
       ]
     elif chapter == 4:
       m_names = ["대나무 순찰자 판다", "죽순 요정"]
+    elif chapter == 30:
+      m_names = ["차원 경비병", "공간 왜곡 슬라임", "시간의 파편"]
     elif is_antarctic:
       m_names = ["설원 늑대", "아이스 좀비", "설인 (예티)"]
     else:
@@ -183,7 +199,7 @@ for st in range(1, 201):
 
 
 def get_monster(stage):
-  s = min(stage, 200)
+  s = min(stage, 300)
   return MONSTERS.get(s, MONSTERS[1]).copy()
 
 
@@ -332,11 +348,12 @@ class StageSelect(discord.ui.Select):
   def __init__(self, max_stage):
     options = []
     available_stages = [1]
-    for s in range(11, 201, 10):
+    # 최대 30챕터(300스테이지) 기준 선택지 생성
+    for s in range(11, 301, 10):
       if s <= max_stage:
         available_stages.append(s)
 
-    if max_stage not in available_stages and max_stage <= 200:
+    if max_stage not in available_stages and max_stage <= 300:
       available_stages.append(max_stage)
 
     available_stages = sorted(list(set(available_stages)))
@@ -919,6 +936,11 @@ class StageWinView(discord.ui.View):
     if cat.get("curse_turns", 0) > 0:
       cat["curse_turns"] -= 1
 
+    # 300 스테이지 초과 방지 체크
+    if cat["stage"] < 300:
+      cat["stage"] += 1
+      cat["max_stage"] = max(cat.get("max_stage", 1), cat["stage"])
+
     enemy = get_monster(cat["stage"])
     save_data(data)
 
@@ -1450,7 +1472,7 @@ async def adopt_cat(interaction: discord.Interaction, name: str):
   if user_id in data:
     await interaction.response.send_message(
         "❌ 이미 입양한 고양이가 있습니다! `/로비` 명령어로 확인해보세요.",
-        ephemeral=True,
+        ephemeral=False,
     )
     return
 
@@ -1489,7 +1511,10 @@ async def adopt_cat(interaction: discord.Interaction, name: str):
   embed.set_thumbnail(
       url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
   )
-  await interaction.response.send_message(embed=embed, view=LobbyView(user_id))
+  # "본인만 볼 수 있음" 해제를 위해 ephemeral=False 적용
+  await interaction.response.send_message(
+      embed=embed, view=LobbyView(user_id), ephemeral=False
+  )
 
 
 @bot.tree.command(
@@ -1502,7 +1527,7 @@ async def open_lobby(interaction: discord.Interaction):
   if user_id not in data:
     await interaction.response.send_message(
         "❌ 아직 입양한 고양이가 없습니다! 먼저 `/입양 [이름]`을 해주세요.",
-        ephemeral=True,
+        ephemeral=False,
     )
     return
 
@@ -1564,8 +1589,9 @@ async def open_lobby(interaction: discord.Interaction):
   embed.set_thumbnail(
       url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
   )
+  # "본인만 볼 수 있음" 해제를 위해 ephemeral=False 적용
   await interaction.response.send_message(
-      embed=embed, view=LobbyView(user_id), ephemeral=True
+      embed=embed, view=LobbyView(user_id), ephemeral=False
   )
 
 
@@ -1608,7 +1634,7 @@ async def test_level_up(
       cat["unlocked_pool"].append(s["name"])
       unlocked_skills.append(s["name"])
 
-  unlocked_stage_target = min(200, ((cat["level"] - 1) // 5) * 10 + 1)
+  unlocked_stage_target = min(300, ((cat["level"] - 1) // 5) * 10 + 1)
   if unlocked_stage_target > cat.get("max_stage", 1):
     cat["max_stage"] = unlocked_stage_target
 
@@ -1631,7 +1657,7 @@ async def test_level_up(
 
 @bot.tree.command(
     name="스테이지이동",
-    description="[테스트용] 원하는 스테이지(1~200)로 즉시 이동합니다.",
+    description="[테스트용] 원하는 스테이지(1~300)로 즉시 이동합니다.",
 )
 async def test_move_stage(interaction: discord.Interaction, stage: int):
   user_id = str(interaction.user.id)
@@ -1643,9 +1669,9 @@ async def test_move_stage(interaction: discord.Interaction, stage: int):
     )
     return
 
-  if not (1 <= stage <= 200):
+  if not (1 <= stage <= 300):
     await interaction.response.send_message(
-        "❌ 스테이지 번호는 1부터 200 사이여야 합니다!", ephemeral=True
+        "❌ 스테이지 번호는 1부터 300 사이여야 합니다!", ephemeral=True
     )
     return
 
