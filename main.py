@@ -1,4 +1,4 @@
-# main.py (파일 I/O 및 데이터 충돌 방지 최적화 버전)
+# main.py (뷰 타임아웃 및 버튼 막힘 현상 최종 해결 버전)
 import json
 import os
 import random
@@ -28,7 +28,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 DATA_FILE = "cats_data.json"
-data_lock = threading.Lock()  # 파일 동시 접근 방지 락
+data_lock = threading.Lock()
 
 # --- 게임 데이터 (스킬 및 몬스터) ---
 ALL_SKILLS = [
@@ -41,7 +41,6 @@ ALL_SKILLS = [
 
 SKILL_DICT = {s["name"]: s for s in ALL_SKILLS}
 
-# 1부터 200 스테이지까지 구조화 (챕터당 10스테이지, X-10은 보스 스테이지)
 MONSTERS = {}
 
 for st in range(1, 201):
@@ -188,7 +187,6 @@ def get_monster(stage):
   return MONSTERS.get(s, MONSTERS[1]).copy()
 
 
-# --- 상점 품목 ---
 SHOP_ITEMS = {
     "싸구려 생선 통조림": {
         "price": 120,
@@ -362,7 +360,6 @@ class StageSelect(discord.ui.Select):
     )
 
   async def callback(self, interaction: discord.Interaction):
-    await interaction.response.defer()
     user_id = str(interaction.user.id)
     data = load_data()
     cat = data[user_id]
@@ -394,29 +391,28 @@ class StageSelect(discord.ui.Select):
     embed.set_thumbnail(url=enemy["image"])
 
     view = BattleView(user_id, enemy)
-    await interaction.edit_original_response(embed=embed, view=view)
+    await interaction.response.edit_message(embed=embed, view=view)
 
 
 class StageSelectView(discord.ui.View):
 
   def __init__(self, max_stage):
-    super().__init__(timeout=60)
+    super().__init__(timeout=180)
     self.add_item(StageSelect(max_stage))
 
 
 class AbandonConfirmView(discord.ui.View):
 
   def __init__(self, user_id):
-    super().__init__(timeout=30)
+    super().__init__(timeout=60)
     self.user_id = user_id
 
   @discord.ui.button(label="😭 정말로 놓아주기", style=discord.ButtonStyle.danger)
   async def confirm_abandon(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -434,7 +430,7 @@ class AbandonConfirmView(discord.ui.View):
           ),
           color=discord.Color.red(),
       )
-      await interaction.edit_original_response(
+      await interaction.response.edit_message(
           content=None, embed=embed, view=None
       )
 
@@ -529,7 +525,7 @@ class ShopSelect(discord.ui.Select):
 class ShopView(discord.ui.View):
 
   def __init__(self, user_id):
-    super().__init__(timeout=60)
+    super().__init__(timeout=180)
     self.user_id = user_id
     self.add_item(ShopSelect(user_id))
 
@@ -541,9 +537,8 @@ class ShopView(discord.ui.View):
   async def back_to_lobby(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -586,7 +581,7 @@ class ShopView(discord.ui.View):
     embed.set_thumbnail(
         url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
     )
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content=None, embed=embed, view=LobbyView(self.user_id)
     )
 
@@ -627,9 +622,8 @@ class ItemSelect(discord.ui.Select):
     self.user_id = user_id
 
   async def callback(self, interaction: discord.Interaction):
-    await interaction.response.defer()
     if self.values[0] == "none":
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "❌ 보유 중인 아이템이 없습니다!", ephemeral=True
       )
       return
@@ -639,7 +633,7 @@ class ItemSelect(discord.ui.Select):
     chosen_item = self.values[0]
 
     if cat["inventory"].get(chosen_item, 0) <= 0:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           f"❌ **[{chosen_item}]** 아이템이 부족합니다!", ephemeral=True
       )
       return
@@ -688,14 +682,12 @@ class ItemSelect(discord.ui.Select):
           ),
           color=discord.Color.red(),
       )
-      await interaction.edit_original_response(
-          embed=embed, view=LobbyView(self.user_id)
-      )
+      await interaction.response.edit_message(embed=embed, view=LobbyView(self.user_id))
       return
 
     save_data(data)
     next_view = BattleView(self.user_id, self.enemy)
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         embed=next_view.create_embed(f"{log_msg}\n{counter_log}"), view=next_view
     )
 
@@ -703,14 +695,14 @@ class ItemSelect(discord.ui.Select):
 class ItemSelectView(discord.ui.View):
 
   def __init__(self, enemy, user_id):
-    super().__init__(timeout=60)
+    super().__init__(timeout=180)
     self.add_item(ItemSelect(enemy, user_id))
 
 
 class LobbyView(discord.ui.View):
 
   def __init__(self, user_id):
-    super().__init__(timeout=None)
+    super().__init__(timeout=180)
     self.user_id = user_id
 
   @discord.ui.button(
@@ -721,9 +713,8 @@ class LobbyView(discord.ui.View):
   async def start_adventure_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -753,7 +744,7 @@ class LobbyView(discord.ui.View):
     embed.set_thumbnail(url=enemy["image"])
 
     view = BattleView(self.user_id, enemy)
-    await interaction.edit_original_response(embed=embed, view=view)
+    await interaction.response.edit_message(embed=embed, view=view)
 
   @discord.ui.button(
       label="🚩 스테이지 선택", style=discord.ButtonStyle.primary, row=0
@@ -761,9 +752,8 @@ class LobbyView(discord.ui.View):
   async def select_stage_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -772,7 +762,7 @@ class LobbyView(discord.ui.View):
     cat = data[self.user_id]
     view = StageSelectView(cat.get("max_stage", 1))
     max_st_name = format_stage_name(cat.get("max_stage", 1))
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content=f"🗺️ 도전할 챕터를 선택하세요! (최고 기록: {max_st_name})",
         view=view,
     )
@@ -783,9 +773,8 @@ class LobbyView(discord.ui.View):
   async def shop_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -805,7 +794,7 @@ class LobbyView(discord.ui.View):
         ),
         color=discord.Color.gold(),
     )
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content=None, embed=embed, view=ShopView(self.user_id)
     )
 
@@ -813,9 +802,8 @@ class LobbyView(discord.ui.View):
   async def info_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -879,7 +867,7 @@ class LobbyView(discord.ui.View):
     embed.set_thumbnail(
         url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
     )
-    await interaction.edit_original_response(content=None, embed=embed, view=self)
+    await interaction.response.edit_message(content=None, embed=embed, view=self)
 
   @discord.ui.button(
       label="💔 고양이와 이별", style=discord.ButtonStyle.danger, row=2
@@ -887,9 +875,8 @@ class LobbyView(discord.ui.View):
   async def abandon_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -903,7 +890,7 @@ class LobbyView(discord.ui.View):
         ),
         color=discord.Color.red(),
     )
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content=None, embed=embed, view=AbandonConfirmView(self.user_id)
     )
 
@@ -911,7 +898,7 @@ class LobbyView(discord.ui.View):
 class StageWinView(discord.ui.View):
 
   def __init__(self, user_id):
-    super().__init__(timeout=60)
+    super().__init__(timeout=180)
     self.user_id = user_id
 
   @discord.ui.button(
@@ -920,9 +907,8 @@ class StageWinView(discord.ui.View):
   async def next_adventure(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -956,7 +942,7 @@ class StageWinView(discord.ui.View):
           inline=False,
       )
     embed.set_thumbnail(url=enemy["image"])
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         embed=embed, view=BattleView(self.user_id, enemy)
     )
 
@@ -966,9 +952,8 @@ class StageWinView(discord.ui.View):
   async def go_lobby(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -981,7 +966,7 @@ class StageWinView(discord.ui.View):
         description="안전한 홈 화면으로 복귀했습니다. (현재 체력은 유지됩니다)",
         color=discord.Color.blue(),
     )
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content=None, embed=embed, view=LobbyView(self.user_id)
     )
 
@@ -1008,13 +993,12 @@ class SkillSelect(discord.ui.Select):
     self.user_id = user_id
 
   async def callback(self, interaction: discord.Interaction):
-    await interaction.response.defer()
     data = load_data()
     cat = data[self.user_id]
     chosen_skill = self.values[0]
 
     if cat.get("skill_cooldown", False):
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "❌ 스킬을 사용한 직후에는 **일반 공격**이나 **아이템**으로 한 턴 쉬어야 합니다!",
           ephemeral=True,
       )
@@ -1041,13 +1025,13 @@ class SkillSelect(discord.ui.Select):
             ),
             color=discord.Color.red(),
         )
-        await interaction.edit_original_response(
+        await interaction.response.edit_message(
             embed=embed, view=LobbyView(self.user_id)
         )
         return
 
       next_view = BattleView(self.user_id, self.enemy)
-      await interaction.edit_original_response(
+      await interaction.response.edit_message(
           embed=next_view.create_embed(log_msg), view=next_view
       )
       return
@@ -1101,7 +1085,7 @@ class SkillSelect(discord.ui.Select):
             f"{log_msg}\n\n🏺 **[꼭두각시 인형 특수능력]**\n> 적이 쓰러지는 순간, **\"와장창!\"** 소리와 함께 사방으로 흩어졌던 도자기 파편들이 기괴하게 모여들며 **다시 부활**했다! (HP 50% 회복)"
         )
         next_view = BattleView(self.user_id, self.enemy)
-        await interaction.edit_original_response(
+        await interaction.response.edit_message(
             embed=next_view.create_embed(revive_msg), view=next_view
         )
         return
@@ -1118,7 +1102,7 @@ class SkillSelect(discord.ui.Select):
         )
 
         next_view = BattleView(self.user_id, self.enemy)
-        await interaction.edit_original_response(
+        await interaction.response.edit_message(
             embed=next_view.create_embed(true_face_msg), view=next_view
         )
         return
@@ -1144,7 +1128,7 @@ class SkillSelect(discord.ui.Select):
           ),
           color=discord.Color.green(),
       )
-      await interaction.edit_original_response(
+      await interaction.response.edit_message(
           embed=embed, view=StageWinView(self.user_id)
       )
       return
@@ -1167,14 +1151,14 @@ class SkillSelect(discord.ui.Select):
           ),
           color=discord.Color.red(),
       )
-      await interaction.edit_original_response(
+      await interaction.response.edit_message(
           embed=embed, view=LobbyView(self.user_id)
       )
       return
 
     save_data(data)
     next_view = BattleView(self.user_id, self.enemy)
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         embed=next_view.create_embed(f"{log_msg}\n{counter_log}"), view=next_view
     )
 
@@ -1182,14 +1166,14 @@ class SkillSelect(discord.ui.Select):
 class SkillSelectView(discord.ui.View):
 
   def __init__(self, skills, enemy, user_id):
-    super().__init__(timeout=60)
+    super().__init__(timeout=180)
     self.add_item(SkillSelect(skills, enemy, user_id))
 
 
 class BattleView(discord.ui.View):
 
   def __init__(self, user_id, enemy):
-    super().__init__(timeout=60)
+    super().__init__(timeout=180)
     self.user_id = user_id
     self.enemy = enemy
 
@@ -1241,9 +1225,8 @@ class BattleView(discord.ui.View):
   async def normal_attack(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -1302,7 +1285,7 @@ class BattleView(discord.ui.View):
             f"{log_msg}\n\n🏺 **[꼭두각시 인형 특수능력]**\n> 적이 쓰러지는 순간, **\"와장창!\"** 소리와 함께 사방으로 흩어졌던 도자기 파편들이 기괴하게 모여들며 **다시 부활**했다! (HP 50% 회복)"
         )
         next_view = BattleView(self.user_id, self.enemy)
-        await interaction.edit_original_response(
+        await interaction.response.edit_message(
             embed=next_view.create_embed(revive_msg), view=next_view
         )
         return
@@ -1319,7 +1302,7 @@ class BattleView(discord.ui.View):
         )
 
         next_view = BattleView(self.user_id, self.enemy)
-        await interaction.edit_original_response(
+        await interaction.response.edit_message(
             embed=next_view.create_embed(true_face_msg), view=next_view
         )
         return
@@ -1341,7 +1324,7 @@ class BattleView(discord.ui.View):
           ),
           color=discord.Color.green(),
       )
-      await interaction.edit_original_response(
+      await interaction.response.edit_message(
           embed=embed, view=StageWinView(self.user_id)
       )
       return
@@ -1364,13 +1347,13 @@ class BattleView(discord.ui.View):
           ),
           color=discord.Color.red(),
       )
-      await interaction.edit_original_response(
+      await interaction.response.edit_message(
           embed=embed, view=LobbyView(self.user_id)
       )
       return
 
     save_data(data)
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         embed=self.create_embed(f"{log_msg}\n{counter_log}"), view=self
     )
 
@@ -1378,9 +1361,8 @@ class BattleView(discord.ui.View):
   async def use_skill_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -1388,19 +1370,19 @@ class BattleView(discord.ui.View):
     data = load_data()
     cat = data[self.user_id]
     if not cat["skills"]:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "❌ 아직 배운 스킬이 없습니다! 레벨업을 해보세요.", ephemeral=True
       )
       return
 
     if cat.get("skill_cooldown", False):
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "❌ 공포에 질렸거나 스킬 직후입니다! **일반 공격**이나 **아이템**으로 턴을 보내주세요.",
           ephemeral=True,
       )
       return
 
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content=f"🐾 **{cat['name']}**의 스킬 창입니다. 사용할 스킬을 골라주세요:",
         view=SkillSelectView(cat["skills"], self.enemy, self.user_id),
     )
@@ -1409,9 +1391,8 @@ class BattleView(discord.ui.View):
   async def use_item_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -1420,13 +1401,13 @@ class BattleView(discord.ui.View):
     cat = data[self.user_id]
     total_items = sum(cat["inventory"].values())
     if total_items <= 0:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "❌ 보유 중인 아이템이 없습니다! 로비 상점에서 구매해주세요.",
           ephemeral=True,
       )
       return
 
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content="🎒 전투 인벤토리입니다. 사용할 아이템을 선택하세요:",
         view=ItemSelectView(self.enemy, self.user_id),
     )
@@ -1435,9 +1416,8 @@ class BattleView(discord.ui.View):
   async def run_away_btn(
       self, interaction: discord.Interaction, button: discord.ui.Button
   ):
-    await interaction.response.defer()
     if str(interaction.user.id) != self.user_id:
-      await interaction.followup.send(
+      await interaction.response.send_message(
           "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
       )
       return
@@ -1456,7 +1436,7 @@ class BattleView(discord.ui.View):
         ),
         color=discord.Color.blurple(),
     )
-    await interaction.edit_original_response(
+    await interaction.response.edit_message(
         content=None, embed=embed, view=LobbyView(self.user_id)
     )
 
@@ -1464,12 +1444,11 @@ class BattleView(discord.ui.View):
 # --- 슬래시 명령어들 ---
 @bot.tree.command(name="입양", description="나만의 아기 고양이를 입양합니다!")
 async def adopt_cat(interaction: discord.Interaction, name: str):
-  await interaction.response.defer()
   user_id = str(interaction.user.id)
   data = load_data()
 
   if user_id in data:
-    await interaction.followup.send(
+    await interaction.response.send_message(
         "❌ 이미 입양한 고양이가 있습니다! `/로비` 명령어로 확인해보세요.",
         ephemeral=True,
     )
@@ -1510,19 +1489,18 @@ async def adopt_cat(interaction: discord.Interaction, name: str):
   embed.set_thumbnail(
       url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
   )
-  await interaction.followup.send(embed=embed)
+  await interaction.response.send_message(embed=embed, view=LobbyView(user_id))
 
 
 @bot.tree.command(
     name="로비", description="안전한 마을 메인 로비 화면으로 이동합니다."
 )
 async def open_lobby(interaction: discord.Interaction):
-  await interaction.response.defer()
   user_id = str(interaction.user.id)
   data = load_data()
 
   if user_id not in data:
-    await interaction.followup.send(
+    await interaction.response.send_message(
         "❌ 아직 입양한 고양이가 없습니다! 먼저 `/입양 [이름]`을 해주세요.",
         ephemeral=True,
     )
@@ -1586,7 +1564,9 @@ async def open_lobby(interaction: discord.Interaction):
   embed.set_thumbnail(
       url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
   )
-  await interaction.followup.send(embed=embed, view=LobbyView(user_id))
+  await interaction.response.send_message(
+      embed=embed, view=LobbyView(user_id), ephemeral=True
+  )
 
 
 # --- 테스트용 레벨업 및 스테이지 이동 명령어 ---
@@ -1597,12 +1577,11 @@ async def open_lobby(interaction: discord.Interaction):
 async def test_level_up(
     interaction: discord.Interaction, levels: int = 1
 ):
-  await interaction.response.defer(ephemeral=True)
   user_id = str(interaction.user.id)
   data = load_data()
 
   if user_id not in data:
-    await interaction.followup.send(
+    await interaction.response.send_message(
         "❌ 먼저 `/입양 [이름]`으로 고양이를 생성해주세요!", ephemeral=True
     )
     return
@@ -1612,7 +1591,7 @@ async def test_level_up(
   actual_gained = target_level - cat["level"]
 
   if actual_gained <= 0:
-    await interaction.followup.send(
+    await interaction.response.send_message(
         "❌ 이미 최고 레벨(Lv.200)에 도달해 있습니다!", ephemeral=True
     )
     return
@@ -1647,7 +1626,7 @@ async def test_level_up(
       ),
       color=discord.Color.green(),
   )
-  await interaction.followup.send(embed=embed, ephemeral=True)
+  await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 @bot.tree.command(
@@ -1655,18 +1634,17 @@ async def test_level_up(
     description="[테스트용] 원하는 스테이지(1~200)로 즉시 이동합니다.",
 )
 async def test_move_stage(interaction: discord.Interaction, stage: int):
-  await interaction.response.defer(ephemeral=True)
   user_id = str(interaction.user.id)
   data = load_data()
 
   if user_id not in data:
-    await interaction.followup.send(
+    await interaction.response.send_message(
         "❌ 먼저 `/입양 [이름]`으로 고양이를 생성해주세요!", ephemeral=True
     )
     return
 
   if not (1 <= stage <= 200):
-    await interaction.followup.send(
+    await interaction.response.send_message(
         "❌ 스테이지 번호는 1부터 200 사이여야 합니다!", ephemeral=True
     )
     return
@@ -1678,7 +1656,7 @@ async def test_move_stage(interaction: discord.Interaction, stage: int):
   save_data(data)
 
   st_title = format_stage_name(stage)
-  await interaction.followup.send(
+  await interaction.response.send_message(
       f"✨ [테스트] 고양이가 **{st_title}**(스테이지 {stage})로 이동했습니다!\n`/로비`에서 '모험 출발'을 누르면 바로 전투가 시작됩니다.",
       ephemeral=True,
   )
