@@ -1,4 +1,4 @@
-# main.py (최종 완성본: 스테이지 선택 반복 충돌 및 모든 버그 해결 버전)
+# main.py (500스테이지 페이지네이션 및 도망치기 체력 유지 적용 버전)
 import json
 import os
 import random
@@ -43,8 +43,8 @@ SKILL_DICT = {s["name"]: s for s in ALL_SKILLS}
 
 MONSTERS = {}
 
-# 최대 300 스테이지(30챕터)까지 구조화
-for st in range(1, 301):
+# 최대 500 스테이지(50챕터)까지 구조화
+for st in range(1, 501):
   chapter = (st - 1) // 10 + 1
   sub = (st - 1) % 10 + 1
 
@@ -198,7 +198,7 @@ for st in range(1, 301):
 
 
 def get_monster(stage):
-  s = min(stage, 300)
+  s = min(stage, 500)
   return MONSTERS.get(s, MONSTERS[1]).copy()
 
 
@@ -341,22 +341,12 @@ async def on_ready():
   print("====== 🐾 고양이 키우기 봇 준비 완료! ======")
 
 
-# --- 1. 스테이지 선택 뷰 (재사용 충돌 방지 안전 버전) ---
-class StageSelect(discord.ui.Select):
+# --- 스테이지 선택 페이지네이션 뷰 (500스테이지 대응) ---
+class StageSelectDropdown(discord.ui.Select):
 
-  def __init__(self, max_stage):
+  def __init__(self, page_stages, user_id):
     options = []
-    available_stages = [1]
-    for s in range(11, 301, 10):
-      if s <= max_stage:
-        available_stages.append(s)
-
-    if max_stage not in available_stages and max_stage <= 300:
-      available_stages.append(max_stage)
-
-    available_stages = sorted(list(set(available_stages)))
-
-    for s in available_stages:
+    for s in page_stages:
       s_name = format_stage_name(s)
       chapter_num = (s - 1) // 10 + 1
       options.append(
@@ -368,11 +358,12 @@ class StageSelect(discord.ui.Select):
       )
 
     super().__init__(
-        placeholder="이동할 챕터(시작 스테이지)를 선택하세요...",
+        placeholder="이동할 챕터를 선택하세요...",
         min_values=1,
         max_values=1,
         options=options,
     )
+    self.user_id = user_id
 
   async def callback(self, interaction: discord.Interaction):
     user_id = str(interaction.user.id)
@@ -416,9 +407,90 @@ class StageSelect(discord.ui.Select):
 
 class StageSelectView(discord.ui.View):
 
-  def __init__(self, max_stage):
+  def __init__(self, user_id, max_stage, current_page=0):
     super().__init__(timeout=180)
-    self.add_item(StageSelect(max_stage))
+    self.user_id = user_id
+    self.max_stage = min(500, max_stage)
+    self.current_page = current_page
+
+    self.all_stages = [1]
+    for s in range(11, self.max_stage + 1, 10):
+      self.all_stages.append(s)
+    self.all_stages = sorted(list(set(self.all_stages)))
+
+    self.page_size = 25
+    self.total_pages = max(
+        1, (len(self.all_stages) + self.page_size - 1) // self.page_size
+    )
+
+    start_idx = self.current_page * self.page_size
+    end_idx = start_idx + self.page_size
+    page_stages = self.all_stages[start_idx:end_idx]
+
+    self.add_item(StageSelectDropdown(page_stages, self.user_id))
+
+    if self.total_pages > 1:
+      prev_btn = discord.ui.Button(
+          label="◀ 이전",
+          style=discord.ButtonStyle.secondary,
+          disabled=(self.current_page == 0),
+          row=1,
+      )
+      prev_btn.callback = self.prev_page_callback
+      self.add_item(prev_btn)
+
+      page_indicator = discord.ui.Button(
+          label=f"페이지 {self.current_page + 1} / {self.total_pages}",
+          style=discord.ButtonStyle.grey,
+          disabled=True,
+          row=1,
+      )
+      self.add_item(page_indicator)
+
+      next_btn = discord.ui.Button(
+          label="다음 ▶",
+          style=discord.ButtonStyle.secondary,
+          disabled=(self.current_page >= self.total_pages - 1),
+          row=1,
+      )
+      next_btn.callback = self.next_page_callback
+      self.add_item(next_btn)
+
+  async def prev_page_callback(self, interaction: discord.Interaction):
+    if str(interaction.user.id) != self.user_id:
+      await interaction.response.send_message(
+          "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
+      )
+      return
+    if self.current_page > 0:
+      new_view = StageSelectView(
+          self.user_id, self.max_stage, self.current_page - 1
+      )
+      await interaction.response.edit_message(
+          content=(
+              f"🗺️ 도전할 챕터를 선택하세요! (최고 기록:"
+              f" {format_stage_name(self.max_stage)})"
+          ),
+          view=new_view,
+      )
+
+  async def next_page_callback(self, interaction: discord.Interaction):
+    if str(interaction.user.id) != self.user_id:
+      await interaction.response.send_message(
+          "본인의 고양이만 조작할 수 있습니다!", ephemeral=True
+      )
+      return
+    if self.current_page < self.total_pages - 1:
+      new_view = StageSelectView(
+          self.user_id, self.max_stage, self.current_page + 1
+      )
+      await interaction.response.edit_message(
+          content=(
+              f"🗺️ 도전할 챕터를 선택하세요! (최고 기록:"
+              f" {format_stage_name(self.max_stage)})"
+          ),
+          view=new_view,
+      )
 
 
 class AbandonConfirmView(discord.ui.View):
@@ -455,7 +527,7 @@ class AbandonConfirmView(discord.ui.View):
       )
 
 
-# --- 2. 상점 선택 뷰 ---
+# --- 상점 선택 뷰 ---
 class ShopSelect(discord.ui.Select):
 
   def __init__(self, user_id):
@@ -785,8 +857,7 @@ class LobbyView(discord.ui.View):
     if not isinstance(max_stage, int):
       max_stage = 1
 
-    # 매번 새로운 뷰 객체를 생성하여 충돌 방지
-    view = StageSelectView(max_stage)
+    view = StageSelectView(self.user_id, max_stage)
     max_st_name = format_stage_name(max_stage)
 
     await interaction.response.edit_message(
@@ -946,7 +1017,7 @@ class StageWinView(discord.ui.View):
     if cat.get("curse_turns", 0) > 0:
       cat["curse_turns"] -= 1
 
-    if cat["stage"] < 300:
+    if cat["stage"] < 500:
       cat["stage"] += 1
       cat["max_stage"] = max(cat.get("max_stage", 1), cat["stage"])
 
@@ -1456,14 +1527,13 @@ class BattleView(discord.ui.View):
     data = load_data()
     cat = data[self.user_id]
     cat["stage"] = 1
-    cat["hp"] = cat["max_hp"]
     cat["skill_cooldown"] = False
     save_data(data)
 
     embed = discord.Embed(
         title="🏃💨 무사히 도망쳤다!",
         description=(
-            "안전한 로비(Stage 1-1)로 복귀했습니다. (체력이 모두 회복되었습니다!)"
+            "안전한 로비(Stage 1-1)로 복귀했습니다. (현재 체력은 그대로 유지됩니다)"
         ),
         color=discord.Color.blurple(),
     )
@@ -1641,7 +1711,7 @@ async def test_level_up(
       cat["unlocked_pool"].append(s["name"])
       unlocked_skills.append(s["name"])
 
-  unlocked_stage_target = min(300, ((cat["level"] - 1) // 5) * 10 + 1)
+  unlocked_stage_target = min(500, ((cat["level"] - 1) // 5) * 10 + 1)
   if unlocked_stage_target > cat.get("max_stage", 1):
     cat["max_stage"] = unlocked_stage_target
 
@@ -1664,7 +1734,7 @@ async def test_level_up(
 
 @bot.tree.command(
     name="스테이지이동",
-    description="[테스트용] 원하는 스테이지(1~300)로 즉시 이동합니다.",
+    description="[테스트용] 원하는 스테이지(1~500)로 즉시 이동합니다.",
 )
 async def test_move_stage(interaction: discord.Interaction, stage: int):
   user_id = str(interaction.user.id)
@@ -1676,9 +1746,9 @@ async def test_move_stage(interaction: discord.Interaction, stage: int):
     )
     return
 
-  if not (1 <= stage <= 300):
+  if not (1 <= stage <= 500):
     await interaction.response.send_message(
-        "❌ 스테이지 번호는 1부터 300 사이여야 합니다!", ephemeral=True
+        "❌ 스테이지 번호는 1부터 500 사이여야 합니다!", ephemeral=True
     )
     return
 
