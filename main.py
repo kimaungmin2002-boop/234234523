@@ -1,4 +1,4 @@
-# main.py (최종 안정화 버전: 스테이지 선택 오류 및 모든 버그 해결)
+# main.py (최종 완성본: 스테이지 선택 반복 충돌 및 모든 버그 해결 버전)
 import json
 import os
 import random
@@ -341,7 +341,7 @@ async def on_ready():
   print("====== 🐾 고양이 키우기 봇 준비 완료! ======")
 
 
-# --- 1. 스테이지 선택 뷰 ---
+# --- 1. 스테이지 선택 뷰 (재사용 충돌 방지 안전 버전) ---
 class StageSelect(discord.ui.Select):
 
   def __init__(self, max_stage):
@@ -377,7 +377,12 @@ class StageSelect(discord.ui.Select):
   async def callback(self, interaction: discord.Interaction):
     user_id = str(interaction.user.id)
     data = load_data()
-    cat = data[user_id]
+    cat = data.get(user_id)
+    if not cat:
+      await interaction.response.send_message(
+          "고양이 정보를 찾을 수 없습니다.", ephemeral=True
+      )
+      return
 
     stage_num = int(self.values[0])
     cat["stage"] = stage_num
@@ -776,11 +781,11 @@ class LobbyView(discord.ui.View):
     data = load_data()
     cat = data.get(self.user_id, {})
 
-    # max_stage가 없거나 누락된 경우 안전하게 1로 처리
     max_stage = cat.get("max_stage", 1)
     if not isinstance(max_stage, int):
       max_stage = 1
 
+    # 매번 새로운 뷰 객체를 생성하여 충돌 방지
     view = StageSelectView(max_stage)
     max_st_name = format_stage_name(max_stage)
 
