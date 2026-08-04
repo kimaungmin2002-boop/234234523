@@ -1,4 +1,4 @@
-# main.py (500스테이지 페이지네이션 및 도망치기 체력 유지 적용 버전)
+# main.py (챕터별 몬스터 정상 배치 및 500스테이지 확장 + 세이브 시스템 적용 버전)
 import json
 import os
 import random
@@ -43,13 +43,14 @@ SKILL_DICT = {s["name"]: s for s in ALL_SKILLS}
 
 MONSTERS = {}
 
-# 최대 500 스테이지(50챕터)까지 구조화
+# 최대 500 스테이지(50챕터) 구조화 및 챕터별 몬스터 완벽 분리
 for st in range(1, 501):
   chapter = (st - 1) // 10 + 1
   sub = (st - 1) % 10 + 1
 
   is_antarctic = chapter % 2 == 0
 
+  # 보스 스테이지 (각 챕터의 10번째 서브 스테이지)
   if sub == 10:
     if chapter == 1:
       MONSTERS[st] = {
@@ -65,15 +66,27 @@ for st in range(1, 501):
       }
     elif chapter == 2:
       MONSTERS[st] = {
+          "name": "거대 바다표범",
+          "hp": 4500,
+          "max_hp": 4500,
+          "atk": 210,
+          "exp": 2200,
+          "gold": 2000,
+          "is_boss": True,
+          "boss_quote": "크르릉! 얼어붙은 바다의 영토에 웬 녀석이냐!",
+          "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
+      }
+    elif chapter == 3:
+      MONSTERS[st] = {
           "name": "개구리 왕자",
-          "hp": 720,
-          "max_hp": 720,
-          "atk": 60,
-          "exp": 600,
-          "gold": 550,
+          "hp": 1200,
+          "max_hp": 1200,
+          "atk": 70,
+          "exp": 800,
+          "gold": 750,
           "is_boss": True,
           "is_frog_prince": True,
-          "boss_quote": "개굴개굴! 내 혀 맛을 보여주마!",
+          "boss_quote": "개굴개굴! 연못의 왕자님 몸이다!",
           "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
       }
     elif chapter == 4:
@@ -89,19 +102,6 @@ for st in range(1, 501):
           "boss_quote": "어두운 밤길을 밝히는 달빛이... 아름답지 않나요? 자, 이 밤의 끝을 함께해요.",
           "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
       }
-    elif chapter == 5:
-      MONSTERS[st] = {
-          "name": "개구리 왕자",
-          "hp": 1200,
-          "max_hp": 1200,
-          "atk": 70,
-          "exp": 800,
-          "gold": 750,
-          "is_boss": True,
-          "is_frog_prince": True,
-          "boss_quote": "개굴개굴! 연못의 왕자님 몸이다!",
-          "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
-      }
     elif chapter == 10:
       MONSTERS[st] = {
           "name": "천년묵은 구미호",
@@ -113,18 +113,6 @@ for st in range(1, 501):
           "is_boss": True,
           "boss_quote": "감히 내 영역에... 꼬리 아홉 개의 불꽃을 보여주마!",
           "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
-      }
-    elif chapter == 15:
-      MONSTERS[st] = {
-          "name": "거대 바다표범",
-          "hp": 4500,
-          "max_hp": 4500,
-          "atk": 210,
-          "exp": 2200,
-          "gold": 2000,
-          "is_boss": True,
-          "boss_quote": "크르릉! 얼어붙은 바다의 영토에 웬 녀석이냐!",
-          "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
       }
     elif chapter == 20:
       MONSTERS[st] = {
@@ -140,7 +128,7 @@ for st in range(1, 501):
       }
     elif chapter == 30:
       MONSTERS[st] = {
-          "name": "최종 영역의 수호자 '제니스'",
+          "name": "차원 지배자 '제니스'",
           "hp": 10000,
           "max_hp": 10000,
           "atk": 400,
@@ -150,9 +138,33 @@ for st in range(1, 501):
           "boss_quote": "모험의 끝에 도달한 것을 치하한다. 하지만 여기서 멈출 것이다!",
           "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
       }
+    elif chapter == 40:
+      MONSTERS[st] = {
+          "name": "공간 왜곡의 대마왕",
+          "hp": 14000,
+          "max_hp": 14000,
+          "atk": 520,
+          "exp": 7000,
+          "gold": 7000,
+          "is_boss": True,
+          "boss_quote": "시공간의 미로 속에서 영원히 길을 잃어라!",
+          "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
+      }
+    elif chapter == 50:
+      MONSTERS[st] = {
+          "name": "최종 신화 수호자 '오메가'",
+          "hp": 20000,
+          "max_hp": 20000,
+          "atk": 700,
+          "exp": 10000,
+          "gold": 10000,
+          "is_boss": True,
+          "boss_quote": "모든 500스테이지의 종착점에 도달한 자여, 나를 쓰러뜨려라!",
+          "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
+      }
     else:
       MONSTERS[st] = {
-          "name": f"챕터 {chapter} 수호자",
+          "name": f"제{chapter}구역 수호자",
           "hp": 400 * chapter,
           "max_hp": 400 * chapter,
           "atk": 30 + chapter * 12,
@@ -162,8 +174,13 @@ for st in range(1, 501):
           "boss_quote": "나를 넘어서지 못한다!",
           "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
       }
+  # 일반 스테이지 (각 챕터별 테마 몹 정확히 고정 매칭)
   else:
-    if chapter == 3:
+    if chapter == 1:
+      m_names = ["아기 원숭이", "정글 가지뱀", "나무늘보"]
+    elif chapter == 2:
+      m_names = ["설원 늑대", "아이스 좀비", "설인 (예티)"]
+    elif chapter == 3:
       m_names = [
           "실 끊어진 태엽 인형",
           "기괴한 도자기 인형",
@@ -171,12 +188,12 @@ for st in range(1, 501):
       ]
     elif chapter == 4:
       m_names = ["그림자 요괴", "달빛 유령", "환영의 여우비"]
-    elif chapter == 30:
-      m_names = ["차원 경비병", "공간 왜곡 슬라임", "시간의 파편"]
+    elif 40 <= chapter <= 49:
+      m_names = ["공간 왜곡 슬라임", "차원 경비병", "시간의 파편"]
     elif is_antarctic:
       m_names = ["설원 늑대", "아이스 좀비", "설인 (예티)"]
     else:
-      m_names = ["아기 원숭이", "정글 가지뱀", "나무늘보"]
+      m_names = ["정글 몬스터", "야생 표범", "독성 식물"]
 
     m_name = m_names[(st + sub) % len(m_names)]
     monster_data = {
@@ -193,6 +210,8 @@ for st in range(1, 501):
       monster_data["is_puppet"] = True
     elif m_name == "저주받은 마리오네트":
       monster_data["is_cursed_witch"] = True
+    elif m_name == "공간 왜곡 슬라임":
+      monster_data["is_distortion_slime"] = True
 
     MONSTERS[st] = monster_data
 
