@@ -1,4 +1,4 @@
-# main.py (저주 및 부활 로직 응답 오류 완벽 수정 버전)
+# main.py (파일 I/O 및 데이터 충돌 방지 최적화 버전)
 import json
 import os
 import random
@@ -28,6 +28,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 DATA_FILE = "cats_data.json"
+data_lock = threading.Lock()  # 파일 동시 접근 방지 락
 
 # --- 게임 데이터 (스킬 및 몬스터) ---
 ALL_SKILLS = [
@@ -85,10 +86,7 @@ for st in range(1, 201):
           "gold": 1400,
           "is_boss": True,
           "is_myungwol": True,
-          "boss_quote": (
-              "어두운 밤길을 밝히는 달빛이... 아름답지 않나요? 자, 이"
-              " 밤의 끝을 함께해요."
-          ),
+          "boss_quote": "어두운 밤길을 밝히는 달빛이... 아름답지 않나요? 자, 이 밤의 끝을 함께해요.",
           "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000",
       }
     elif chapter == 5:
@@ -262,18 +260,23 @@ SHOP_EQUIPMENTS = {
 
 
 def load_data():
-  if not os.path.exists(DATA_FILE):
-    return {}
-  try:
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-      return json.load(f)
-  except Exception:
-    return {}
+  with data_lock:
+    if not os.path.exists(DATA_FILE):
+      return {}
+    try:
+      with open(DATA_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+    except Exception:
+      return {}
 
 
 def save_data(data):
-  with open(DATA_FILE, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=4)
+  with data_lock:
+    try:
+      with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+      print(f"❌ 데이터 저장 오류: {e}")
 
 
 def format_stage_name(stage_num):
@@ -303,9 +306,7 @@ def check_and_apply_level_up(cat):
           new_skill = random.choice(available_skills)
           cat["skills"].append(new_skill)
           cat["unlocked_pool"].append(new_skill)
-          unlocked_msg += (
-              f"\n🎉 **[스킬 해금!]** 새로운 스킬 **[{new_skill}]**을(를) 배웠습니다!"
-          )
+          unlocked_msg += f"\n🎉 **[스킬 해금!]** 새로운 스킬 **[{new_skill}]**을(를) 배웠습니다!"
     else:
       break
 
@@ -378,11 +379,7 @@ class StageSelect(discord.ui.Select):
     embed = discord.Embed(
         title=f"{theme_icon} {st_title} 탐험 중...",
         description=(
-            f"야생 **{enemy['name']}**이(가) 나타났다!\n\n🐾 **내 고양이 정보**\n•"
-            f" 이름: {cat['name']} (Lv.{cat['level']})\n• 체력: ❤️ {cat['hp']}"
-            f" / {cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}\n\n👾"
-            f" **적 정보**\n• 이름: {enemy['name']}\n• 체력: ❤️ {enemy['hp']}"
-            f" / {enemy['max_hp']}\n• 공격력: ⚔️ {enemy['atk']}"
+            f"야생 **{enemy['name']}**이(가) 나타났다!\n\n🐾 **내 고양이 정보**\n• 이름: {cat['name']} (Lv.{cat['level']})\n• 체력: ❤️ {cat['hp']} / {cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}\n\n👾 **적 정보**\n• 이름: {enemy['name']}\n• 체력: ❤️ {enemy['hp']} / {enemy['max_hp']}\n• 공격력: ⚔️ {enemy['atk']}"
         ),
         color=discord.Color.purple()
         if enemy.get("is_boss")
@@ -433,8 +430,7 @@ class AbandonConfirmView(discord.ui.View):
       embed = discord.Embed(
           title="💔 고양이와 이별했습니다...",
           description=(
-              f"**{cat_name}**이(가) 모험의 땅 너머로 자유롭게 떠났습니다.\n`/입양`"
-              " 명령어로 새로운 고양이를 맞이할 수 있습니다."
+              f"**{cat_name}**이(가) 모험의 땅 너머로 자유롭게 떠났습니다.\n`/입양` 명령어로 새로운 고양이를 맞이할 수 있습니다."
           ),
           color=discord.Color.red(),
       )
@@ -494,8 +490,7 @@ class ShopSelect(discord.ui.Select):
       save_data(data)
 
       await interaction.response.send_message(
-          f"🛒 **[{chosen_item}]**을(를) 구매했습니다! (보유 골드: {cat['gold']} Gold,"
-          f" 현재 보유량: {cat['inventory'][chosen_item]}개)",
+          f"🛒 **[{chosen_item}]**을(를) 구매했습니다! (보유 골드: {cat['gold']} Gold, 현재 보유량: {cat['inventory'][chosen_item]}개)",
           ephemeral=True,
       )
 
@@ -526,8 +521,7 @@ class ShopSelect(discord.ui.Select):
       save_data(data)
 
       await interaction.response.send_message(
-          f"🛡️ **[{chosen_eq}]** 구매 완료! {stat_msg} (남은 골드: {cat['gold']}"
-          " Gold)",
+          f"🛡️ **[{chosen_eq}]** 구매 완료! {stat_msg} (남은 골드: {cat['gold']} Gold)",
           ephemeral=True,
       )
 
@@ -678,9 +672,7 @@ class ItemSelect(discord.ui.Select):
       cat.pop("temp_defend", None)
 
     cat["hp"] = max(0, cat["hp"] - c_dmg)
-    counter_log = (
-        f"👾 {self.enemy['name']}의 반격! **{c_dmg}**의 피해를 입었습니다."
-    )
+    counter_log = f"👾 {self.enemy['name']}의 반격! **{c_dmg}**의 피해를 입었습니다."
 
     if cat["hp"] <= 0:
       lost_gold = cat["gold"] // 2
@@ -692,8 +684,7 @@ class ItemSelect(discord.ui.Select):
       embed = discord.Embed(
           title="💀 전투 패배...",
           description=(
-              f"{log_msg}\n\n쓰러졌습니다... 체력이 완전히 회복되어 로비로"
-              f" 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
+              f"{log_msg}\n\n쓰러졌습니다... 체력이 완전히 회복되어 로비로 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
           ),
           color=discord.Color.red(),
       )
@@ -747,11 +738,7 @@ class LobbyView(discord.ui.View):
     embed = discord.Embed(
         title=f"{theme_icon} {st_title} 탐험 중...",
         description=(
-            f"야생 **{enemy['name']}**이(가) 나타났다!\n\n🐾 **내 고양이 정보**\n•"
-            f" 이름: {cat['name']} (Lv.{cat['level']})\n• 체력: ❤️ {cat['hp']}"
-            f" / {cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}\n\n👾"
-            f" **적 정보**\n• 이름: {enemy['name']}\n• 체력: ❤️ {enemy['hp']}"
-            f" / {enemy['max_hp']}\n• 공격력: ⚔️ {enemy['atk']}"
+            f"야생 **{enemy['name']}**이(가) 나타났다!\n\n🐾 **내 고양이 정보**\n• 이름: {cat['name']} (Lv.{cat['level']})\n• 체력: ❤️ {cat['hp']} / {cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}\n\n👾 **적 정보**\n• 이름: {enemy['name']}\n• 체력: ❤️ {enemy['hp']} / {enemy['max_hp']}\n• 공격력: ⚔️ {enemy['atk']}"
         ),
         color=discord.Color.purple()
         if enemy.get("is_boss")
@@ -786,10 +773,7 @@ class LobbyView(discord.ui.View):
     view = StageSelectView(cat.get("max_stage", 1))
     max_st_name = format_stage_name(cat.get("max_stage", 1))
     await interaction.edit_original_response(
-        content=(
-            "🗺️ 도전할 챕터를 선택하세요! (최고 기록:"
-            f" {max_st_name})"
-        ),
+        content=f"🗺️ 도전할 챕터를 선택하세요! (최고 기록: {max_st_name})",
         view=view,
     )
 
@@ -817,14 +801,7 @@ class LobbyView(discord.ui.View):
     embed = discord.Embed(
         title="🛒 모험 상점 (소모품 & 장비)",
         description=(
-            f"환영합니다! 골드를 소모해 장비를 무한 중복 구매하고 스펙을"
-            f" 키우세요.\n💰 보유 골드: **{cat['gold']} Gold**\n\n🛡️ **구매한 장비"
-            f" 현황**:\n{eq_summary}\n\n🎒 **보유 소모품**:\n• 싸구려 생선"
-            f" 통조림: {cat['inventory']['싸구려 생선 통조림']}개\n• 츄르:"
-            f" {cat['inventory']['츄르']}개\n• 신선한 캣닢:"
-            f" {cat['inventory']['신선한 캣닢']}개\n• 코코넛 껍질:"
-            f" {cat['inventory']['코코넛 껍질']}개\n• 반짝이는 털뭉치:"
-            f" {cat['inventory']['반짝이는 털뭉치']}개"
+            f"환영합니다! 골드를 소모해 장비를 무한 중복 구매하고 스펙을 키우세요.\n💰 보유 골드: **{cat['gold']} Gold**\n\n🛡️ **구매한 장비 현황**:\n{eq_summary}\n\n🎒 **보유 소모품**:\n• 싸구려 생선 통조림: {cat['inventory']['싸구려 생선 통조림']}개\n• 츄르: {cat['inventory']['츄르']}개\n• 신선한 캣닢: {cat['inventory']['신선한 캣닢']}개\n• 코코넛 껍질: {cat['inventory']['코코넛 껍질']}개\n• 반짝이는 털뭉치: {cat['inventory']['반짝이는 털뭉치']}개"
         ),
         color=discord.Color.gold(),
     )
@@ -896,9 +873,7 @@ class LobbyView(discord.ui.View):
     embed.add_field(name="공격력", value=f"⚔️ {cat['atk']}", inline=True)
     embed.add_field(name="보유 골드", value=f"💰 {cat['gold']} Gold", inline=True)
     embed.add_field(name="상태 이상", value=curse_text, inline=True)
-    embed.add_field(
-        name="🛡️ 장비 보유 현황", value=eq_summary, inline=False
-    )
+    embed.add_field(name="🛡️ 장비 보유 현황", value=eq_summary, inline=False)
     embed.add_field(name="⚡ 보유 스킬", value=skills_text, inline=False)
     embed.add_field(name="🎒 보유 아이템", value=inv_text, inline=False)
     embed.set_thumbnail(
@@ -924,8 +899,7 @@ class LobbyView(discord.ui.View):
     embed = discord.Embed(
         title="⚠️ 고양이와 정말로 이별하시겠습니까?",
         description=(
-            f"**{cat['name']}**이를(를) 떠나보내면 지금까지 키운 정보가"
-            " **모두 삭제**됩니다."
+            f"**{cat['name']}**이를(를) 떠나보내면 지금까지 키운 정보가 **모두 삭제**됩니다."
         ),
         color=discord.Color.red(),
     )
@@ -969,11 +943,7 @@ class StageWinView(discord.ui.View):
     embed = discord.Embed(
         title=f"{theme_icon} {st_title} 탐험 중...",
         description=(
-            f"야생 **{enemy['name']}**이(가) 나타났다!\n\n🐾 **내 고양이 정보**\n•"
-            f" 이름: {cat['name']} (Lv.{cat['level']})\n• 체력: ❤️ {cat['hp']}"
-            f" / {cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}\n\n👾"
-            f" **적 정보**\n• 이름: {enemy['name']}\n• 체력: ❤️ {enemy['hp']}"
-            f" / {enemy['max_hp']}\n• 공격력: ⚔️ {enemy['atk']}"
+            f"야생 **{enemy['name']}**이(가) 나타났다!\n\n🐾 **내 고양이 정보**\n• 이름: {cat['name']} (Lv.{cat['level']})\n• 체력: ❤️ {cat['hp']} / {cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}\n\n👾 **적 정보**\n• 이름: {enemy['name']}\n• 체력: ❤️ {enemy['hp']} / {enemy['max_hp']}\n• 공격력: ⚔️ {enemy['atk']}"
         ),
         color=discord.Color.purple()
         if enemy.get("is_boss")
@@ -1008,9 +978,7 @@ class StageWinView(discord.ui.View):
 
     embed = discord.Embed(
         title=f"🏡 {cat['name']}의 메인 로비",
-        description=(
-            "안전한 홈 화면으로 복귀했습니다. (현재 체력은 유지됩니다)"
-        ),
+        description="안전한 홈 화면으로 복귀했습니다. (현재 체력은 유지됩니다)",
         color=discord.Color.blue(),
     )
     await interaction.edit_original_response(
@@ -1058,7 +1026,7 @@ class SkillSelect(discord.ui.Select):
       cat["hp"] = max(0, cat["hp"] - c_dmg)
       save_data(data)
 
-      log_msg = f"🐸 개구리 왕자: **\"개굴! 촵촵!\"**\n> 혀 채찍에 휘감겨 스킬이 취소되고 기절했습니다! (반격 피해: **{c_dmg}**)"
+      log_msg = f'🐸 개구리 왕자: **"개굴! 촵촵!"**\n> 혀 채찍에 휘감겨 스킬이 취소되고 기절했습니다! (반격 피해: **{c_dmg}**)'
 
       if cat["hp"] <= 0:
         lost_gold = cat["gold"] // 2
@@ -1069,8 +1037,7 @@ class SkillSelect(discord.ui.Select):
         embed = discord.Embed(
             title="💀 전투 패배...",
             description=(
-                f"{log_msg}\n\n쓰러졌습니다... 체력이 완전히 회복되어 로비로"
-                f" 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
+                f"{log_msg}\n\n쓰러졌습니다... 체력이 완전히 회복되어 로비로 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
             ),
             color=discord.Color.red(),
         )
@@ -1092,9 +1059,7 @@ class SkillSelect(discord.ui.Select):
       if mask_turn == "tear":
         cat["skill_cooldown"] = True
         log_msg = (
-            "💧 **[눈물의 가면]** 명월이 서글픈 울음소리로 파동을 일으켰다!\n>"
-            " 고양이의 마력이 흐트러져 **이번 스킬 데미지가 반으로 깎이고 쿨타임이"
-            " 적용**됩니다!"
+            "💧 **[눈물의 가면]** 명월이 서글픈 울음소리로 파동을 일으켰다!\n> 고양이의 마력이 흐트러져 **이번 스킬 데미지가 반으로 깎이고 쿨타임이 적용**됩니다!"
         )
         multiplier = 0.75
       else:
@@ -1133,9 +1098,7 @@ class SkillSelect(discord.ui.Select):
         cat["skill_cooldown"] = False
 
         revive_msg = (
-            f"{log_msg}\n\n🏺 **[꼭두각시 인형 특수능력]**\n> 적이 쓰러지는"
-            " 순간, **\"와장창!\"** 소리와 함께 사방으로 흩어졌던 도자기"
-            " 파편들이 기괴하게 모여들며 **다시 부활**했다! (HP 50% 회복)"
+            f"{log_msg}\n\n🏺 **[꼭두각시 인형 특수능력]**\n> 적이 쓰러지는 순간, **\"와장창!\"** 소리와 함께 사방으로 흩어졌던 도자기 파편들이 기괴하게 모여들며 **다시 부활**했다! (HP 50% 회복)"
         )
         next_view = BattleView(self.user_id, self.enemy)
         await interaction.edit_original_response(
@@ -1150,11 +1113,8 @@ class SkillSelect(discord.ui.Select):
 
         cat_name = cat["name"]
         true_face_msg = (
-            "🎭 **[가면의 파괴]**\n> 명월의 체력이 다 닳자, 등 뒤에 떠 있던"
-            " 수많은 달 가면들이 유리조각처럼 **와장창 산산조각** 나며 바닥에"
-            " 떨어졌다!\n> 캄캄한 어둠 속에서 오직 눈부시게 아름다운 그녀의 진짜"
-            f' 얼굴 하나만이 고요히 드러난다.\n> 🩸 *"{cat_name}야... 이 달빛이...'
-            ' 내 진짜 얼굴이야."'
+            "🎭 **[가면의 파괴]**\n> 명월의 체력이 다 닳자, 등 뒤에 떠 있던 수많은 달 가면들이 유리조각처럼 **와장창 산산조각** 나며 바닥에 떨어졌다!\n> 캄캄한 어둠 속에서 오직 눈부시게 아름다운 그녀의 진짜 얼굴 하나만이 고요히 드러난다.\n> 🩸 *"
+            f'"{cat_name}야... 이 달빛이... 내 진짜 얼굴이야."'
         )
 
         next_view = BattleView(self.user_id, self.enemy)
@@ -1180,9 +1140,7 @@ class SkillSelect(discord.ui.Select):
               else "🎉 전투 승리!"
           ),
           description=(
-              f"{log_msg}\n\n야생 {self.enemy['name']}을(를)"
-              f" 물리쳤습니다!\n🚩 다음 스테이지: **{st_name}**\n💰 보상"
-              f" 획득!{lvl_msg}"
+              f"{log_msg}\n\n야생 {self.enemy['name']}을(를) 물리쳤습니다!\n🚩 다음 스테이지: **{st_name}**\n💰 보상 획득!{lvl_msg}"
           ),
           color=discord.Color.green(),
       )
@@ -1193,9 +1151,7 @@ class SkillSelect(discord.ui.Select):
 
     c_dmg = max(1, random.randint(self.enemy["atk"] - 2, self.enemy["atk"] + 2))
     cat["hp"] = max(0, cat["hp"] - c_dmg)
-    counter_log = (
-        f"👾 {self.enemy['name']}의 반격! **{c_dmg}**의 피해를 입었습니다."
-    )
+    counter_log = f"👾 {self.enemy['name']}의 반격! **{c_dmg}**의 피해를 입었습니다."
 
     if cat["hp"] <= 0:
       lost_gold = cat["gold"] // 2
@@ -1207,8 +1163,7 @@ class SkillSelect(discord.ui.Select):
       embed = discord.Embed(
           title="💀 전투 패배...",
           description=(
-              f"{log_msg}\n\n쓰러졌습니다... 체력이 완전히 회복되어 로비로"
-              f" 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
+              f"{log_msg}\n\n쓰러졌습니다... 체력이 완전히 회복되어 로비로 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
           ),
           color=discord.Color.red(),
       )
@@ -1266,8 +1221,7 @@ class BattleView(discord.ui.View):
     embed.add_field(
         name=f"🐱 {cat['name']} (Lv.{cat['level']})",
         value=(
-            f"❤️ HP: `{cat['hp']}/{cat['max_hp']}`\n⚔️ 공격력:"
-            f" `{cat['atk']}`\n📈 EXP: `{exp_str}`"
+            f"❤️ HP: `{cat['hp']}/{cat['max_hp']}`\n⚔️ 공격력: `{cat['atk']}`\n📈 EXP: `{exp_str}`"
         ),
         inline=True,
     )
@@ -1345,9 +1299,7 @@ class BattleView(discord.ui.View):
         self.enemy["puppet_revived"] = True
 
         revive_msg = (
-            f"{log_msg}\n\n🏺 **[꼭두각시 인형 특수능력]**\n> 적이 쓰러지는"
-            " 순간, **\"와장창!\"** 소리와 함께 사방으로 흩어졌던 도자기"
-            " 파편들이 기괴하게 모여들며 **다시 부활**했다! (HP 50% 회복)"
+            f"{log_msg}\n\n🏺 **[꼭두각시 인형 특수능력]**\n> 적이 쓰러지는 순간, **\"와장창!\"** 소리와 함께 사방으로 흩어졌던 도자기 파편들이 기괴하게 모여들며 **다시 부활**했다! (HP 50% 회복)"
         )
         next_view = BattleView(self.user_id, self.enemy)
         await interaction.edit_original_response(
@@ -1362,11 +1314,8 @@ class BattleView(discord.ui.View):
 
         cat_name = cat["name"]
         true_face_msg = (
-            "🎭 **[가면의 파괴]**\n> 명월의 체력이 다 닳자, 등 뒤에 떠 있던"
-            " 수많은 달 가면들이 유리조각처럼 **와장창 산산조각** 나며 바닥에"
-            " 떨어졌다!\n> 캄캄한 어둠 속에서 오직 눈부시게 아름다운 그녀의 진짜"
-            f' 얼굴 하나만이 고요히 드러난다.\n> 🩸 *"{cat_name}야... 이 달빛이...'
-            ' 내 진짜 얼굴이야."'
+            "🎭 **[가면의 파괴]**\n> 명월의 체력이 다 닳자, 등 뒤에 떠 있던 수많은 달 가면들이 유리조각처럼 **와장창 산산조각** 나며 바닥에 떨어졌다!\n> 캄캄한 어둠 속에서 오직 눈부시게 아름다운 그녀의 진짜 얼굴 하나만이 고요히 드러난다.\n> 🩸 *"
+            f'"{cat_name}야... 이 달빛이... 내 진짜 얼굴이야."'
         )
 
         next_view = BattleView(self.user_id, self.enemy)
@@ -1388,9 +1337,7 @@ class BattleView(discord.ui.View):
       embed = discord.Embed(
           title="🎉 전투 승리!",
           description=(
-              f"{log_msg}\n\n야생 {self.enemy['name']}을(를)"
-              f" 물리쳤습니다!\n🚩 다음 스테이지: **{st_name}**\n💰 보상"
-              f" 획득!{lvl_msg}"
+              f"{log_msg}\n\n야생 {self.enemy['name']}을(를) 물리쳤습니다!\n🚩 다음 스테이지: **{st_name}**\n💰 보상 획득!{lvl_msg}"
           ),
           color=discord.Color.green(),
       )
@@ -1401,9 +1348,7 @@ class BattleView(discord.ui.View):
 
     c_dmg = max(1, random.randint(self.enemy["atk"] - 2, self.enemy["atk"] + 2))
     cat["hp"] = max(0, cat["hp"] - c_dmg)
-    counter_log = (
-        f"👾 {self.enemy['name']}의 반격! **{c_dmg}**의 피해를 입었습니다."
-    )
+    counter_log = f"👾 {self.enemy['name']}의 반격! **{c_dmg}**의 피해를 입었습니다."
 
     if cat["hp"] <= 0:
       lost_gold = cat["gold"] // 2
@@ -1415,8 +1360,7 @@ class BattleView(discord.ui.View):
       embed = discord.Embed(
           title="💀 전투 패배...",
           description=(
-              f"{log_msg}{counter_log}\n\n쓰러졌습니다... 체력이 완전히 회복되어"
-              f" 로비로 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
+              f"{log_msg}{counter_log}\n\n쓰러졌습니다... 체력이 완전히 회복되어 로비로 돌아왔습니다. (골드 50% 분실: **-{lost_gold} Gold**)"
           ),
           color=discord.Color.red(),
       )
@@ -1559,8 +1503,7 @@ async def adopt_cat(interaction: discord.Interaction, name: str):
   embed = discord.Embed(
       title="🎉 축하합니다! 새로운 아기 고양이를 입양했습니다!",
       description=(
-          f"🐾 이름: **{name}**\n❤️ 체력: 80/80 | ⚔️ 공격력: 15\n🎒 환영 선물로"
-          " [싸구려 생선 통조림] 1개를 지급했습니다!"
+          f"🐾 이름: **{name}**\n❤️ 체력: 80/80 | ⚔️ 공격력: 15\n🎒 환영 선물로 [싸구려 생선 통조림] 1개를 지급했습니다!"
       ),
       color=discord.Color.gold(),
   )
@@ -1637,9 +1580,7 @@ async def open_lobby(interaction: discord.Interaction):
   embed.add_field(name="공격력", value=f"⚔️ {cat['atk']}", inline=True)
   embed.add_field(name="보유 골드", value=f"💰 {cat['gold']} Gold", inline=True)
   embed.add_field(name="상태 이상", value=curse_text, inline=True)
-  embed.add_field(
-      name="🛡️ 장비 보유 현황", value=eq_summary, inline=False
-  )
+  embed.add_field(name="🛡️ 장비 보유 현황", value=eq_summary, inline=False)
   embed.add_field(name="⚡ 보유 스킬", value=skills_text, inline=False)
   embed.add_field(name="🎒 보유 아이템", value=inv_text, inline=False)
   embed.set_thumbnail(
@@ -1702,8 +1643,7 @@ async def test_level_up(
   embed = discord.Embed(
       title="✨ [테스트] 레벨업 완료!",
       description=(
-          f"**{cat['name']}**의 레벨이 **Lv.{cat['level']}**이 되었습니다!{skill_text}\n\n•"
-          f" 체력: ❤️ {cat['hp']}/{cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}"
+          f"**{cat['name']}**의 레벨이 **Lv.{cat['level']}**이 되었습니다!{skill_text}\n\n• 체력: ❤️ {cat['hp']}/{cat['max_hp']}\n• 공격력: ⚔️ {cat['atk']}"
       ),
       color=discord.Color.green(),
   )
@@ -1739,9 +1679,7 @@ async def test_move_stage(interaction: discord.Interaction, stage: int):
 
   st_title = format_stage_name(stage)
   await interaction.followup.send(
-      f"✨ [테스트] 고양이가 **{st_title}**(스테이지 {stage})로"
-      " 이동했습니다!\n`/로비`에서 '모험 출발'을 누르면 바로 전투가"
-      " 시작됩니다.",
+      f"✨ [테스트] 고양이가 **{st_title}**(스테이지 {stage})로 이동했습니다!\n`/로비`에서 '모험 출발'을 누르면 바로 전투가 시작됩니다.",
       ephemeral=True,
   )
 
