@@ -1,4 +1,4 @@
-# main.py (챕터 4 몬스터 매핑 및 보스 출현 완벽 수정 버전)
+# main.py (최종 안정화 버전: 스테이지 선택 오류 및 모든 버그 해결)
 import json
 import os
 import random
@@ -163,7 +163,6 @@ for st in range(1, 301):
           "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
       }
   else:
-    # 챕터별 일반 몬스터 이름 분기 (챕터 4는 명월 테마 몬스터들로 명확히 분리)
     if chapter == 3:
       m_names = [
           "실 끊어진 태엽 인형",
@@ -775,9 +774,16 @@ class LobbyView(discord.ui.View):
       return
 
     data = load_data()
-    cat = data[self.user_id]
-    view = StageSelectView(cat.get("max_stage", 1))
-    max_st_name = format_stage_name(cat.get("max_stage", 1))
+    cat = data.get(self.user_id, {})
+
+    # max_stage가 없거나 누락된 경우 안전하게 1로 처리
+    max_stage = cat.get("max_stage", 1)
+    if not isinstance(max_stage, int):
+      max_stage = 1
+
+    view = StageSelectView(max_stage)
+    max_st_name = format_stage_name(max_stage)
+
     await interaction.response.edit_message(
         content=f"🗺️ 도전할 챕터를 선택하세요! (최고 기록: {max_st_name})",
         view=view,
