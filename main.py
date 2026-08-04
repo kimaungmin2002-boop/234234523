@@ -1,4 +1,4 @@
-# main.py (챕터 30(300스테이지) 확장 및 몬스터/응답 오류 완벽 해결 버전)
+# main.py (챕터 4 몬스터 매핑 및 보스 출현 완벽 수정 버전)
 import json
 import os
 import random
@@ -43,7 +43,7 @@ SKILL_DICT = {s["name"]: s for s in ALL_SKILLS}
 
 MONSTERS = {}
 
-# 최대 300 스테이지(30챕터)까지 확장
+# 최대 300 스테이지(30챕터)까지 구조화
 for st in range(1, 301):
   chapter = (st - 1) // 10 + 1
   sub = (st - 1) % 10 + 1
@@ -163,7 +163,7 @@ for st in range(1, 301):
           "image": "https://images.unsplash.com/photo-1534188331102-17849e5d4b1a?q=80&w=1000",
       }
   else:
-    # 챕터별 일반 몬스터 이름 분기 철저 분리
+    # 챕터별 일반 몬스터 이름 분기 (챕터 4는 명월 테마 몬스터들로 명확히 분리)
     if chapter == 3:
       m_names = [
           "실 끊어진 태엽 인형",
@@ -171,7 +171,7 @@ for st in range(1, 301):
           "저주받은 마리오네트",
       ]
     elif chapter == 4:
-      m_names = ["대나무 순찰자 판다", "죽순 요정"]
+      m_names = ["그림자 요괴", "달빛 유령", "환영의 여우비"]
     elif chapter == 30:
       m_names = ["차원 경비병", "공간 왜곡 슬라임", "시간의 파편"]
     elif is_antarctic:
@@ -348,7 +348,6 @@ class StageSelect(discord.ui.Select):
   def __init__(self, max_stage):
     options = []
     available_stages = [1]
-    # 최대 30챕터(300스테이지) 기준 선택지 생성
     for s in range(11, 301, 10):
       if s <= max_stage:
         available_stages.append(s)
@@ -936,7 +935,6 @@ class StageWinView(discord.ui.View):
     if cat.get("curse_turns", 0) > 0:
       cat["curse_turns"] -= 1
 
-    # 300 스테이지 초과 방지 체크
     if cat["stage"] < 300:
       cat["stage"] += 1
       cat["max_stage"] = max(cat.get("max_stage", 1), cat["stage"])
@@ -1511,7 +1509,6 @@ async def adopt_cat(interaction: discord.Interaction, name: str):
   embed.set_thumbnail(
       url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
   )
-  # "본인만 볼 수 있음" 해제를 위해 ephemeral=False 적용
   await interaction.response.send_message(
       embed=embed, view=LobbyView(user_id), ephemeral=False
   )
@@ -1589,7 +1586,6 @@ async def open_lobby(interaction: discord.Interaction):
   embed.set_thumbnail(
       url="https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=1000"
   )
-  # "본인만 볼 수 있음" 해제를 위해 ephemeral=False 적용
   await interaction.response.send_message(
       embed=embed, view=LobbyView(user_id), ephemeral=False
   )
